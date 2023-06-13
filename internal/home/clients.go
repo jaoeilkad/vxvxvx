@@ -30,12 +30,32 @@ type DHCP interface {
 	// Leases returns all the DHCP leases.
 	Leases() (leases []*dhcpsvc.Lease)
 
-	// HostByIP returns the hostname for the given IP address leased, if any.
-	HostByIP(ip netip.Addr) (host string, ok bool)
+	// HostByIP returns the hostname of the DHCP client with the given IP
+	// address.  The address will be netip.Addr{} if there is no such client,
+	// due to an assumption that a DHCP client must always have an IP address.
+	HostByIP(ip netip.Addr) (host string)
 
-	// MACByIP returns the MAC address for the given IP address leased, if any.
+	// MACByIP returns the MAC address for the given IP address leased.  It
+	// returns nil if there is no such client, due to an assumption that a DHCP
+	// client must always have a MAC address.
 	MACByIP(ip netip.Addr) (mac net.HardwareAddr)
 }
+
+// emptyDHCP is an empty implementation of the [DHCP] interface that returns
+// zero values.
+type emptyDHCP struct{}
+
+// type check
+var _ DHCP = emptyDHCP{}
+
+// Leases implements the [DHCP] interface for emptyDHCP.
+func (emptyDHCP) Leases() (leases []*dhcpsvc.Lease) { return nil }
+
+// HostByIP implements the [DHCP] interface for emptyDHCP.
+func (emptyDHCP) HostByIP(ip netip.Addr) (host string) { return "" }
+
+// MACByIP implements the [DHCP] interface for emptyDHCP.
+func (emptyDHCP) MACByIP(ip netip.Addr) (mac net.HardwareAddr) { return nil }
 
 // clientsContainer is the storage of all runtime and persistent clients.
 type clientsContainer struct {
@@ -114,7 +134,7 @@ func (clients *clientsContainer) Init(
 	clients.safeSearchCacheTTL = time.Minute * time.Duration(filteringConf.CacheTime)
 
 	// TODO(e.burkov):  Use actual implementation when it's ready.
-	clients.dhcp = dhcpsvc.Empty{}
+	clients.dhcp = emptyDHCP{}
 
 	if clients.testing {
 		return
@@ -345,7 +365,7 @@ func (clients *clientsContainer) clientSource(ip netip.Addr) (src clientSource) 
 	rc, ok := clients.ipToRC[ip]
 	if ok {
 		if rc.Source < ClientSourceDHCP {
-			if _, ok = clients.dhcp.HostByIP(ip); ok {
+			if clients.dhcp.HostByIP(ip) != "" {
 				return ClientSourceDHCP
 			}
 		}
@@ -573,8 +593,7 @@ func (clients *clientsContainer) findRuntimeClient(ip netip.Addr) (rc *RuntimeCl
 		return rc, true
 	}
 
-	host, dhcpOK := clients.dhcp.HostByIP(ip)
-	if dhcpOK && host != "" {
+	if host := clients.dhcp.HostByIP(ip); host != "" {
 		return &RuntimeClient{
 			Host:      host,
 			Source:    ClientSourceDHCP,
@@ -817,8 +836,7 @@ func (clients *clientsContainer) addHostLocked(
 	rc, ok := clients.ipToRC[ip]
 	if !ok {
 		if src < ClientSourceDHCP {
-			_, ok = clients.dhcp.HostByIP(ip)
-			if ok {
+			if clients.dhcp.HostByIP(ip) != "" {
 				return false
 			}
 		}

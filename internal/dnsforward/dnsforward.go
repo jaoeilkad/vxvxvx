@@ -60,14 +60,19 @@ type ipToHostTable = map[netip.Addr]string
 
 // DHCP is an interface for accesing DHCP lease data needed in this package.
 type DHCP interface {
-	// HostByIP returns the leased hostname for the given IP address, if any.
-	HostByIP(ip netip.Addr) (host string, ok bool)
+	// HostByIP returns the hostname of the DHCP client with the given IP
+	// address.  The address will be netip.Addr{} if there is no such client,
+	// due to an assumption that a DHCP client must always have an IP address.
+	HostByIP(ip netip.Addr) (host string)
 
-	// IPByHost returns the leased IP address for the given hostname, if any.
-	IPByHost(host string) (ip netip.Addr, ok bool)
+	// IPByHost returns the IP address of the DHCP client with the given
+	// hostname.  The hostname will be an empty string if there is no such
+	// client, due to an assumption that a DHCP client must always have a
+	// hostname, either set by the client or assigned automatically.
+	IPByHost(host string) (ip netip.Addr)
 
 	// IsClientHost returns true if the given question should be served from
-	// DHCP lease data.
+	// DHCP lease data.  q shouldn't be accessed for writing until it returned.
 	IsClientHost(q *dns.Question) (ok bool)
 }
 

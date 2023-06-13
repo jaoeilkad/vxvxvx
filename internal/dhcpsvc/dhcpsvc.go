@@ -10,9 +10,14 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/AdGuardHome/internal/next/agh"
+	"github.com/miekg/dns"
 )
 
 // Lease is a DHCP lease.
+//
+// TODO(e.burkov):  Consider it to [agh], since it also may be needed in
+// [websvc].  Also think of implementing iterating methods with appropriate
+// signatures.
 type Lease struct {
 	// IP is the IP address leased to the client.
 	IP netip.Addr
@@ -34,16 +39,25 @@ type Interface interface {
 	agh.ServiceWithConfig[*Config]
 
 	// HostByIP returns the hostname of the DHCP client with the given IP
-	// address, if any.
-	HostByIP(ip netip.Addr) (host string, ok bool)
+	// address.  The address will be netip.Addr{} if there is no such client,
+	// due to an assumption that a DHCP client must always have an IP address.
+	HostByIP(ip netip.Addr) (host string)
 
-	// MACByIP returns the MAC address of the DHCP client with the given IP
-	// address, if any.
+	// MACByIP returns the MAC address for the given IP address leased.  It
+	// returns nil if there is no such client, due to an assumption that a DHCP
+	// client must always have a MAC address.
 	MACByIP(ip netip.Addr) (mac net.HardwareAddr)
 
 	// IPByHost returns the IP address of the DHCP client with the given
-	// hostname, if any.
-	IPByHost(host string) (ip netip.Addr, ok bool)
+	// hostname.  The hostname will be an empty string if there is no such
+	// client, due to an assumption that a DHCP client must always have a
+	// hostname, either set by the client or assigned automatically.
+	IPByHost(host string) (ip netip.Addr)
+
+	// IsClientHost returns true if the given question matches one of the DHCP
+	// client hostnames.  It is safe to call this method concurrently, but q
+	// shouldn't be accessed for writing until it returned.
+	IsClientHost(q *dns.Question) (ok bool)
 
 	// Leases returns all the DHCP leases.
 	Leases() (leases []*Lease)
@@ -82,13 +96,16 @@ var _ agh.ServiceWithConfig[*Config] = Empty{}
 func (Empty) Config() (conf *Config) { return nil }
 
 // HostByIP implements the [Interface] interface for Empty.
-func (Empty) HostByIP(_ netip.Addr) (host string, ok bool) { return "", false }
+func (Empty) HostByIP(_ netip.Addr) (host string) { return "" }
 
 // MACByIP implements the [Interface] interface for Empty.
 func (Empty) MACByIP(_ netip.Addr) (mac net.HardwareAddr) { return nil }
 
 // IPByHost implements the [Interface] interface for Empty.
-func (Empty) IPByHost(_ string) (ip netip.Addr, ok bool) { return netip.Addr{}, false }
+func (Empty) IPByHost(_ string) (ip netip.Addr) { return netip.Addr{} }
+
+// IsClientHost implements the [Interface] interface for Empty.
+func (Empty) IsClientHost(_ *dns.Question) (ok bool) { return false }
 
 // Leases implements the [Interface] interface for Empty.
 func (Empty) Leases() (leases []*Lease) { return nil }
