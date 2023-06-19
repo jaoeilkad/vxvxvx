@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/AdGuardHome/internal/aghnet"
-	"github.com/AdguardTeam/AdGuardHome/internal/dhcpd"
 	"github.com/AdguardTeam/AdGuardHome/internal/dhcpsvc"
 	"github.com/AdguardTeam/AdGuardHome/internal/dnsforward"
 	"github.com/AdguardTeam/AdGuardHome/internal/filtering"
@@ -41,22 +40,6 @@ type DHCP interface {
 	MACByIP(ip netip.Addr) (mac net.HardwareAddr)
 }
 
-// emptyDHCP is an empty implementation of the [DHCP] interface that returns
-// zero values.
-type emptyDHCP struct{}
-
-// type check
-var _ DHCP = emptyDHCP{}
-
-// Leases implements the [DHCP] interface for emptyDHCP.
-func (emptyDHCP) Leases() (leases []*dhcpsvc.Lease) { return nil }
-
-// HostByIP implements the [DHCP] interface for emptyDHCP.
-func (emptyDHCP) HostByIP(ip netip.Addr) (host string) { return "" }
-
-// MACByIP implements the [DHCP] interface for emptyDHCP.
-func (emptyDHCP) MACByIP(ip netip.Addr) (mac net.HardwareAddr) { return nil }
-
 // clientsContainer is the storage of all runtime and persistent clients.
 type clientsContainer struct {
 	// TODO(a.garipov): Perhaps use a number of separate indices for different
@@ -68,9 +51,6 @@ type clientsContainer struct {
 	ipToRC map[netip.Addr]*RuntimeClient
 
 	allTags *stringutil.Set
-
-	// dhcpServer is used for looking up clients IP addresses by MAC addresses
-	dhcpServer dhcpd.Interface
 
 	// dhcp is the DHCP service implementation.
 	dhcp DHCP
@@ -110,7 +90,7 @@ type clientsContainer struct {
 // Note: this function must be called only once
 func (clients *clientsContainer) Init(
 	objects []*clientObject,
-	dhcpServer dhcpd.Interface,
+	dhcpServer DHCP,
 	etcHosts *aghnet.HostsContainer,
 	arpdb aghnet.ARPDB,
 	filteringConf *filtering.Config,
@@ -125,7 +105,9 @@ func (clients *clientsContainer) Init(
 
 	clients.allTags = stringutil.NewSet(clientTags...)
 
-	clients.dhcpServer = dhcpServer
+	// TODO(e.burkov):  Use [dhcpsvc] implementation when it's ready.
+	clients.dhcp = dhcpServer
+
 	clients.etcHosts = etcHosts
 	clients.arpdb = arpdb
 	clients.addFromConfig(objects, filteringConf)
@@ -133,16 +115,8 @@ func (clients *clientsContainer) Init(
 	clients.safeSearchCacheSize = filteringConf.SafeSearchCacheSize
 	clients.safeSearchCacheTTL = time.Minute * time.Duration(filteringConf.CacheTime)
 
-	// TODO(e.burkov):  Use actual implementation when it's ready.
-	clients.dhcp = emptyDHCP{}
-
 	if clients.testing {
 		return
-	}
-
-	if clients.dhcpServer != nil {
-		clients.dhcpServer.SetOnLeaseChanged(clients.onDHCPLeaseChanged)
-		clients.onDHCPLeaseChanged(dhcpd.LeaseChangedAdded)
 	}
 
 	if clients.etcHosts != nil {
@@ -314,40 +288,6 @@ func (clients *clientsContainer) periodicUpdate() {
 		clients.reloadARP()
 		time.Sleep(arpClientsUpdatePeriod)
 	}
-}
-
-// onDHCPLeaseChanged is a callback for the DHCP server.  It updates the list of
-// runtime clients using the DHCP server's leases.
-//
-// TODO(e.burkov):  Remove when switched to dhcpsvc.
-func (clients *clientsContainer) onDHCPLeaseChanged(flags int) {
-	if clients.dhcpServer == nil || !config.Clients.Sources.DHCP {
-		return
-	}
-
-	clients.lock.Lock()
-	defer clients.lock.Unlock()
-
-	clients.rmHostsBySrc(ClientSourceDHCP)
-
-	if flags == dhcpd.LeaseChangedRemovedAll {
-		return
-	}
-
-	leases := clients.dhcpServer.Leases(dhcpd.LeasesAll)
-	n := 0
-	for _, l := range leases {
-		if l.Hostname == "" {
-			continue
-		}
-
-		ok := clients.addHostLocked(l.IP, l.Hostname, ClientSourceDHCP)
-		if ok {
-			n++
-		}
-	}
-
-	log.Debug("clients: added %d client aliases from dhcp", n)
 }
 
 // clientSource checks if client with this IP address already exists and returns
@@ -546,21 +486,16 @@ func (clients *clientsContainer) findLocked(id string) (c *Client, ok bool) {
 		}
 	}
 
-	if clients.dhcpServer != nil {
-		return clients.findDHCP(ip)
-	}
-
-	return nil, false
+	// TODO(e.burkov):  Iterate through clients.list only once.
+	return clients.findDHCP(ip)
 }
 
 // findDHCP searches for a client by its MAC, if the DHCP server is active and
 // there is such client.  clients.lock is expected to be locked.
 func (clients *clientsContainer) findDHCP(ip netip.Addr) (c *Client, ok bool) {
-	foundMAC := clients.dhcpServer.FindMACbyIP(ip)
+	foundMAC := clients.dhcp.MACByIP(ip)
 	if foundMAC == nil {
-		if foundMAC = clients.dhcp.MACByIP(ip); foundMAC == nil {
-			return nil, false
-		}
+		return nil, false
 	}
 
 	for _, c = range clients.list {
@@ -585,20 +520,23 @@ func (clients *clientsContainer) findRuntimeClient(ip netip.Addr) (rc *RuntimeCl
 		return nil, false
 	}
 
-	clients.lock.Lock()
-	defer clients.lock.Unlock()
+	var checkDHCP bool
+	func() {
+		clients.lock.Lock()
+		defer clients.lock.Unlock()
 
-	rc, ok = clients.ipToRC[ip]
-	if ok && rc.Source > ClientSourceDHCP {
-		return rc, true
-	}
+		rc, ok = clients.ipToRC[ip]
+		checkDHCP = !ok || rc.Source < ClientSourceDHCP
+	}()
 
-	if host := clients.dhcp.HostByIP(ip); host != "" {
-		return &RuntimeClient{
-			Host:      host,
-			Source:    ClientSourceDHCP,
-			WHOISInfo: &RuntimeClientWHOISInfo{},
-		}, true
+	if checkDHCP {
+		if host := clients.dhcp.HostByIP(ip); host != "" {
+			return &RuntimeClient{
+				Host:      host,
+				Source:    ClientSourceDHCP,
+				WHOISInfo: &RuntimeClientWHOISInfo{},
+			}, true
+		}
 	}
 
 	return rc, ok

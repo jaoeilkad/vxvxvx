@@ -114,6 +114,40 @@ func (s *v4Server) validHostnameForClient(cliHostname string, ip netip.Addr) (ho
 	return hostname
 }
 
+func (s *v4Server) HostByIP(ip netip.Addr) (host string) {
+	s.leasesLock.Lock()
+	defer s.leasesLock.Unlock()
+
+	for _, l := range s.leases {
+		if l.IP == ip {
+			return l.Hostname
+		}
+	}
+
+	return ""
+}
+
+func (s *v4Server) IPByHost(host string) (ip netip.Addr) {
+	s.leasesLock.Lock()
+	defer s.leasesLock.Unlock()
+
+	if !s.leaseHosts.Has(host) {
+		return netip.Addr{}
+	}
+
+	slices.IndexFunc(s.leases, func(l *Lease) bool {
+		if l.Hostname == host {
+			ip = l.IP
+
+			return true
+		}
+
+		return false
+	})
+
+	return netip.Addr{}
+}
+
 // ResetLeases resets leases.
 func (s *v4Server) ResetLeases(leases []*Lease) (err error) {
 	defer func() { err = errors.Annotate(err, "dhcpv4: %w") }()

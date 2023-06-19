@@ -14,7 +14,6 @@ import (
 
 	"github.com/AdguardTeam/AdGuardHome/internal/aghalg"
 	"github.com/AdguardTeam/AdGuardHome/internal/aghnet"
-	"github.com/AdguardTeam/AdGuardHome/internal/dhcpd"
 	"github.com/AdguardTeam/AdGuardHome/internal/filtering"
 	"github.com/AdguardTeam/AdGuardHome/internal/querylog"
 	"github.com/AdguardTeam/AdGuardHome/internal/stats"
@@ -45,18 +44,6 @@ var defaultBootstrap = []string{"9.9.9.10", "149.112.112.10", "2620:fe::10", "26
 var defaultBlockedHosts = []string{"version.bind", "id.server", "hostname.bind"}
 
 var webRegistered bool
-
-// hostToIPTable is a convenient type alias for tables of host names to an IP
-// address.
-//
-// TODO(e.burkov):  Use the [DHCP] interface instead.
-type hostToIPTable = map[string]netip.Addr
-
-// ipToHostTable is a convenient type alias for tables of IP addresses to their
-// host names.  For example, for use with PTR queries.
-//
-// TODO(e.burkov):  Use the [DHCP] interface instead.
-type ipToHostTable = map[netip.Addr]string
 
 // DHCP is an interface for accesing DHCP lease data needed in this package.
 type DHCP interface {
@@ -89,7 +76,7 @@ type DHCP interface {
 type Server struct {
 	dnsProxy   *proxy.Proxy         // DNS proxy instance
 	dnsFilter  *filtering.DNSFilter // DNS filter instance
-	dhcpServer dhcpd.Interface      // DHCP server instance (optional)
+	dhcpServer DHCP                 // DHCP server instance (optional)
 	queryLog   querylog.QueryLog    // Query log instance
 	stats      stats.Interface
 	access     *accessManager
@@ -116,12 +103,6 @@ type Server struct {
 
 	// anonymizer masks the client's IP addresses if needed.
 	anonymizer *aghnet.IPMut
-
-	tableHostToIP     hostToIPTable
-	tableHostToIPLock sync.Mutex
-
-	tableIPToHost     ipToHostTable
-	tableIPToHostLock sync.Mutex
 
 	// clientIDCache is a temporary storage for ClientIDs that were extracted
 	// during the BeforeRequestHandler stage.
@@ -153,7 +134,7 @@ type DNSCreateParams struct {
 	DNSFilter   *filtering.DNSFilter
 	Stats       stats.Interface
 	QueryLog    querylog.QueryLog
-	DHCPServer  dhcpd.Interface
+	DHCPServer  DHCP
 	PrivateNets netutil.SubnetSet
 	Anonymizer  *aghnet.IPMut
 	LocalDomain string
@@ -206,11 +187,7 @@ func NewServer(p DNSCreateParams) (s *Server, err error) {
 		return nil, fmt.Errorf("initializing system resolvers: %w", err)
 	}
 
-	if p.DHCPServer != nil {
-		s.dhcpServer = p.DHCPServer
-		s.dhcpServer.SetOnLeaseChanged(s.onDHCPLeaseChanged)
-		s.onDHCPLeaseChanged(dhcpd.LeaseChangedAdded)
-	}
+	s.dhcpServer = p.DHCPServer
 
 	if runtime.GOARCH == "mips" || runtime.GOARCH == "mipsle" {
 		// Use plain DNS on MIPS, encryption is too slow

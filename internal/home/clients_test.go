@@ -8,11 +8,27 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/AdGuardHome/internal/dhcpd"
+	"github.com/AdguardTeam/AdGuardHome/internal/dhcpsvc"
 	"github.com/AdguardTeam/AdGuardHome/internal/filtering"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type testDHCP struct {
+	OnLeases func() (leases []*dhcpsvc.Lease)
+	OnHostBy func(ip netip.Addr) (host string)
+	OnMACBy  func(ip netip.Addr) (mac net.HardwareAddr)
+}
+
+// Lease implements the [DHCP] interface for testDHCP.
+func (t *testDHCP) Leases() (leases []*dhcpsvc.Lease) { return t.OnLeases() }
+
+// HostByIP implements the [DHCP] interface for testDHCP.
+func (t *testDHCP) HostByIP(ip netip.Addr) (host string) { return t.OnHostBy(ip) }
+
+// MACByIP implements the [DHCP] interface for testDHCP.
+func (t *testDHCP) MACByIP(ip netip.Addr) (mac net.HardwareAddr) { return t.OnMACBy(ip) }
 
 // newClientsContainer is a helper that creates a new clients container for
 // tests.
@@ -21,7 +37,13 @@ func newClientsContainer() (c *clientsContainer) {
 		testing: true,
 	}
 
-	c.Init(nil, nil, nil, nil, &filtering.Config{})
+	dhcp := &testDHCP{
+		OnLeases: func() (leases []*dhcpsvc.Lease) { panic("not implemented") },
+		OnHostBy: func(ip netip.Addr) (host string) { return "" },
+		OnMACBy:  func(ip netip.Addr) (mac net.HardwareAddr) { return nil },
+	}
+
+	c.Init(nil, dhcp, nil, nil, &filtering.Config{})
 
 	return c
 }
@@ -287,7 +309,7 @@ func TestClientsAddExisting(t *testing.T) {
 		dhcpServer, err := dhcpd.Create(config)
 		require.NoError(t, err)
 
-		clients.dhcpServer = dhcpServer
+		clients.dhcp = dhcpServer
 
 		err = dhcpServer.AddStaticLease(&dhcpd.Lease{
 			HWAddr:   net.HardwareAddr{0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA},

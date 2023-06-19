@@ -21,7 +21,6 @@ import (
 	"github.com/AdguardTeam/AdGuardHome/internal/aghalg"
 	"github.com/AdguardTeam/AdGuardHome/internal/aghnet"
 	"github.com/AdguardTeam/AdGuardHome/internal/aghtest"
-	"github.com/AdguardTeam/AdGuardHome/internal/dhcpd"
 	"github.com/AdguardTeam/AdGuardHome/internal/filtering"
 	"github.com/AdguardTeam/AdGuardHome/internal/filtering/hashprefix"
 	"github.com/AdguardTeam/AdGuardHome/internal/filtering/safesearch"
@@ -75,8 +74,13 @@ func createTestServer(
 
 	f.SetEnabled(true)
 
+	dhcp := &testDHCP{
+		OnEnabled:  func() (ok bool) { return false },
+		OnHostByIP: func(ip netip.Addr) (host string) { return "" },
+		OnIPByHost: func(host string) (ip netip.Addr) { panic("not implemented") },
+	}
 	s, err = NewServer(DNSCreateParams{
-		DHCPServer:  testDHCP,
+		DHCPServer:  dhcp,
 		DNSFilter:   f,
 		PrivateNets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 	})
@@ -828,8 +832,13 @@ func TestBlockedCustomIP(t *testing.T) {
 	f, err := filtering.New(&filtering.Config{}, filters)
 	require.NoError(t, err)
 
+	dhcp := &testDHCP{
+		OnEnabled:  func() (ok bool) { return false },
+		OnHostByIP: func(_ netip.Addr) (host string) { panic("not implemented") },
+		OnIPByHost: func(_ string) (ip netip.Addr) { panic("not implemented") },
+	}
 	s, err := NewServer(DNSCreateParams{
-		DHCPServer:  testDHCP,
+		DHCPServer:  dhcp,
 		DNSFilter:   f,
 		PrivateNets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 	})
@@ -982,8 +991,13 @@ func TestRewrite(t *testing.T) {
 
 	f.SetEnabled(true)
 
+	dhcp := &testDHCP{
+		OnEnabled:  func() (ok bool) { return false },
+		OnHostByIP: func(ip netip.Addr) (host string) { panic("not implemented") },
+		OnIPByHost: func(host string) (ip netip.Addr) { panic("not implemented") },
+	}
 	s, err := NewServer(DNSCreateParams{
-		DHCPServer:  testDHCP,
+		DHCPServer:  dhcp,
 		DNSFilter:   f,
 		PrivateNets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 	})
@@ -1078,21 +1092,24 @@ func publicKey(priv any) any {
 	}
 }
 
-var testDHCP = &dhcpd.MockInterface{
-	OnStart:   func() (err error) { panic("not implemented") },
-	OnStop:    func() (err error) { panic("not implemented") },
-	OnEnabled: func() (ok bool) { return true },
-	OnLeases: func(flags dhcpd.GetLeasesFlags) (leases []*dhcpd.Lease) {
-		return []*dhcpd.Lease{{
-			IP:       netip.MustParseAddr("192.168.12.34"),
-			HWAddr:   net.HardwareAddr{0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA},
-			Hostname: "myhost",
-		}}
-	},
-	OnSetOnLeaseChanged: func(olct dhcpd.OnLeaseChangedT) {},
-	OnFindMACbyIP:       func(ip netip.Addr) (mac net.HardwareAddr) { panic("not implemented") },
-	OnWriteDiskConfig:   func(c *dhcpd.ServerConfig) { panic("not implemented") },
+// testDHCP is a mock implementation of the [DHCP] interface.
+type testDHCP struct {
+	OnHostByIP func(ip netip.Addr) (host string)
+	OnIPByHost func(host string) (ip netip.Addr)
+	OnEnabled  func() (ok bool)
 }
+
+// type check
+var _ DHCP = (*testDHCP)(nil)
+
+// HostByIP implements the [DHCP] interface for *testDHCP.
+func (d *testDHCP) HostByIP(ip netip.Addr) (host string) { return d.OnHostByIP(ip) }
+
+// IPByHost implements the [DHCP] interface for *testDHCP.
+func (d *testDHCP) IPByHost(host string) (ip netip.Addr) { return d.OnIPByHost(host) }
+
+// IsClientHost implements the [DHCP] interface for *testDHCP.
+func (d *testDHCP) Enabled() (ok bool) { return d.OnEnabled() }
 
 func TestPTRResponseFromDHCPLeases(t *testing.T) {
 	const localDomain = "lan"
@@ -1101,8 +1118,14 @@ func TestPTRResponseFromDHCPLeases(t *testing.T) {
 	require.NoError(t, err)
 
 	s, err := NewServer(DNSCreateParams{
-		DNSFilter:   flt,
-		DHCPServer:  testDHCP,
+		DNSFilter: flt,
+		DHCPServer: &testDHCP{
+			OnEnabled:  func() (ok bool) { return true },
+			OnIPByHost: func(host string) (ip netip.Addr) { panic("not implemented") },
+			OnHostByIP: func(ip netip.Addr) (host string) {
+				return "myhost"
+			},
+		},
 		PrivateNets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 		LocalDomain: localDomain,
 	})
@@ -1151,6 +1174,12 @@ func TestPTRResponseFromHosts(t *testing.T) {
 	`)},
 	}
 
+	dhcp := &testDHCP{
+		OnEnabled:  func() (ok bool) { return false },
+		OnIPByHost: func(host string) (ip netip.Addr) { panic("not implemented") },
+		OnHostByIP: func(ip netip.Addr) (host string) { return "" },
+	}
+
 	var eventsCalledCounter uint32
 	hc, err := aghnet.NewHostsContainer(0, testFS, &aghtest.FSWatcher{
 		OnEvents: func() (e <-chan struct{}) {
@@ -1179,7 +1208,7 @@ func TestPTRResponseFromHosts(t *testing.T) {
 
 	var s *Server
 	s, err = NewServer(DNSCreateParams{
-		DHCPServer:  testDHCP,
+		DHCPServer:  dhcp,
 		DNSFilter:   flt,
 		PrivateNets: netutil.SubnetSetFunc(netutil.IsLocallyServed),
 	})

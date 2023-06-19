@@ -12,7 +12,6 @@ import (
 	"github.com/AdguardTeam/AdGuardHome/internal/aghalg"
 	"github.com/AdguardTeam/AdGuardHome/internal/aghhttp"
 	"github.com/AdguardTeam/AdGuardHome/internal/aghnet"
-	"github.com/AdguardTeam/AdGuardHome/internal/dhcpd"
 	"github.com/AdguardTeam/AdGuardHome/internal/dnsforward"
 	"github.com/AdguardTeam/AdGuardHome/internal/filtering"
 	"github.com/AdguardTeam/AdGuardHome/internal/querylog"
@@ -122,7 +121,7 @@ func initDNSServer(
 	filters *filtering.DNSFilter,
 	sts stats.Interface,
 	qlog querylog.QueryLog,
-	dhcpSrv dhcpd.Interface,
+	dhcpSrv dnsforward.DHCP,
 	anonymizer *aghnet.IPMut,
 	httpReg aghhttp.RegisterFunc,
 	tlsConf *tlsConfigSettings,

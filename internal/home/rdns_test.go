@@ -12,6 +12,7 @@ import (
 
 	"github.com/AdguardTeam/AdGuardHome/internal/aghalg"
 	"github.com/AdguardTeam/AdGuardHome/internal/aghtest"
+	"github.com/AdguardTeam/AdGuardHome/internal/dhcpsvc"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/cache"
 	"github.com/AdguardTeam/golibs/log"
@@ -26,6 +27,12 @@ func TestRDNS_Begin(t *testing.T) {
 	aghtest.ReplaceLogLevel(t, log.DEBUG)
 	w := &bytes.Buffer{}
 	aghtest.ReplaceLogWriter(t, w)
+
+	dhcp := &testDHCP{
+		OnLeases: func() (leases []*dhcpsvc.Lease) { panic("not implemented") },
+		OnHostBy: func(ip netip.Addr) (host string) { panic("not implemented") },
+		OnMACBy:  func(ip netip.Addr) (mac net.HardwareAddr) { return nil },
+	}
 
 	ip1234, ip1235 := netip.MustParseAddr("1.2.3.4"), netip.MustParseAddr("1.2.3.5")
 
@@ -91,6 +98,7 @@ func TestRDNS_Begin(t *testing.T) {
 				idIndex: tc.cliIDIndex,
 				ipToRC:  map[netip.Addr]*RuntimeClient{},
 				allTags: stringutil.NewSet(),
+				dhcp:    dhcp,
 			},
 		}
 		ipCache.Clear()

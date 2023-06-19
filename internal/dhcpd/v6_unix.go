@@ -18,6 +18,7 @@ import (
 	"github.com/insomniacslk/dhcp/dhcpv6"
 	"github.com/insomniacslk/dhcp/dhcpv6/server6"
 	"github.com/insomniacslk/dhcp/iana"
+	"golang.org/x/exp/slices"
 )
 
 const valueIAID = "ADGH" // value for IANA.ID
@@ -57,6 +58,36 @@ func ip6InRange(start, ip net.IP) bool {
 		return false
 	}
 	return start[15] <= ip[15]
+}
+
+func (s *v6Server) HostByIP(ip netip.Addr) (host string) {
+	s.leasesLock.Lock()
+	defer s.leasesLock.Unlock()
+
+	for _, l := range s.leases {
+		if l.IP == ip {
+			return l.Hostname
+		}
+	}
+
+	return ""
+}
+
+func (s *v6Server) IPByHost(host string) (ip netip.Addr) {
+	s.leasesLock.Lock()
+	defer s.leasesLock.Unlock()
+
+	slices.IndexFunc(s.leases, func(l *Lease) bool {
+		if l.Hostname == host {
+			ip = l.IP
+
+			return true
+		}
+
+		return false
+	})
+
+	return ip
 }
 
 // ResetLeases resets leases.
