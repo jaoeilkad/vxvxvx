@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/AdGuardHome/internal/next/agh"
-	"github.com/miekg/dns"
 )
 
 // Lease is a DHCP lease.
@@ -38,6 +37,9 @@ type Lease struct {
 type Interface interface {
 	agh.ServiceWithConfig[*Config]
 
+	// Enabled returns true if DHCP provides information about clients.
+	Enabled() (ok bool)
+
 	// HostByIP returns the hostname of the DHCP client with the given IP
 	// address.  The address will be netip.Addr{} if there is no such client,
 	// due to an assumption that a DHCP client must always have an IP address.
@@ -53,11 +55,6 @@ type Interface interface {
 	// client, due to an assumption that a DHCP client must always have a
 	// hostname, either set by the client or assigned automatically.
 	IPByHost(host string) (ip netip.Addr)
-
-	// IsClientHost returns true if the given question matches one of the DHCP
-	// client hostnames.  It is safe to call this method concurrently, but q
-	// shouldn't be accessed for writing until it returned.
-	IsClientHost(q *dns.Question) (ok bool)
 
 	// Leases returns all the DHCP leases.
 	Leases() (leases []*Lease)
@@ -95,6 +92,9 @@ var _ agh.ServiceWithConfig[*Config] = Empty{}
 // Config implements the [ServiceWithConfig] interface for Empty.
 func (Empty) Config() (conf *Config) { return nil }
 
+// Enabled implements the [Interface] interface for Empty.
+func (Empty) Enabled() (ok bool) { return false }
+
 // HostByIP implements the [Interface] interface for Empty.
 func (Empty) HostByIP(_ netip.Addr) (host string) { return "" }
 
@@ -103,9 +103,6 @@ func (Empty) MACByIP(_ netip.Addr) (mac net.HardwareAddr) { return nil }
 
 // IPByHost implements the [Interface] interface for Empty.
 func (Empty) IPByHost(_ string) (ip netip.Addr) { return netip.Addr{} }
-
-// IsClientHost implements the [Interface] interface for Empty.
-func (Empty) IsClientHost(_ *dns.Question) (ok bool) { return false }
 
 // Leases implements the [Interface] interface for Empty.
 func (Empty) Leases() (leases []*Lease) { return nil }

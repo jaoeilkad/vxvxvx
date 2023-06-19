@@ -71,9 +71,8 @@ type DHCP interface {
 	// hostname, either set by the client or assigned automatically.
 	IPByHost(host string) (ip netip.Addr)
 
-	// IsClientHost returns true if the given question should be served from
-	// DHCP lease data.  q shouldn't be accessed for writing until it returned.
-	IsClientHost(q *dns.Question) (ok bool)
+	// Enabled returns true if DHCP provides information about clients.
+	Enabled() (ok bool)
 }
 
 // Server is the main way to start a DNS server.

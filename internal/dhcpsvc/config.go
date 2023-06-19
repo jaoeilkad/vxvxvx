@@ -26,15 +26,15 @@ type Config struct {
 
 // InterfaceConfig is the configuration of a single DHCP interface.
 type InterfaceConfig struct {
-	// DHCPv4 is the configuration of DHCP protocol for IPv4.
-	DHCPv4 *DHCPv4Config
+	// IPv4 is the configuration of DHCP protocol for IPv4.
+	IPv4 *IPv4Config
 
-	// DHCPv6 is the configuration of DHCP protocol for IPv6.
-	DHCPv6 *DHCPv6Config
+	// IPv6 is the configuration of DHCP protocol for IPv6.
+	IPv6 *IPv6Config
 }
 
-// DHCPv4Config is the interface-specific configuration for DHCPv4.
-type DHCPv4Config struct {
+// IPv4Config is the interface-specific configuration for DHCPv4.
+type IPv4Config struct {
 	// GatewayIP is the IPv4 address of the network's gateway.  It is used as
 	// the default gateway for DHCP clients and also used in calculating the
 	// network-specific broadcast address.
@@ -61,8 +61,8 @@ type DHCPv4Config struct {
 	Enabled bool
 }
 
-// DHCPv6Config is the interface-specific configuration for DHCPv6.
-type DHCPv6Config struct {
+// IPv6Config is the interface-specific configuration for DHCPv6.
+type IPv6Config struct {
 	// RangeStart is the first address in the range to assign to DHCP clients.
 	RangeStart netip.Addr
 

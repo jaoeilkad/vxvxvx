@@ -28,8 +28,9 @@ const (
 	defaultBackoff     time.Duration = 500 * time.Millisecond
 )
 
-// Lease contains the necessary information about a DHCP lease.  It's used in
-// various places.  So don't change it without good reason.
+// Lease contains the necessary information about a DHCP lease.  It's used as is
+// in the database, so don't change it until it's absolutely necessary, see
+// [dataVersion].
 type Lease struct {
 	// Expiry is the expiration time of the lease.
 	Expiry time.Time `json:"expires"`
