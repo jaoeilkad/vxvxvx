@@ -77,7 +77,7 @@ func (clients *clientsContainer) Init(
 	etcHosts *aghnet.HostsContainer,
 	arpdb aghnet.ARPDB,
 	filteringConf *filtering.Config,
-) {
+) (err error) {
 	if clients.list != nil {
 		log.Fatal("clients.list != nil")
 	}
@@ -91,13 +91,17 @@ func (clients *clientsContainer) Init(
 	clients.dhcpServer = dhcpServer
 	clients.etcHosts = etcHosts
 	clients.arpdb = arpdb
-	clients.addFromConfig(objects, filteringConf)
+	err = clients.addFromConfig(objects, filteringConf)
+	if err != nil {
+		// Don't wrap the error, because it's informative enough as is.
+		return err
+	}
 
 	clients.safeSearchCacheSize = filteringConf.SafeSearchCacheSize
 	clients.safeSearchCacheTTL = time.Minute * time.Duration(filteringConf.CacheTime)
 
 	if clients.testing {
-		return
+		return nil
 	}
 
 	clients.updateFromDHCP(true)
@@ -108,6 +112,8 @@ func (clients *clientsContainer) Init(
 	if clients.etcHosts != nil {
 		go clients.handleHostsUpdates()
 	}
+
+	return nil
 }
 
 func (clients *clientsContainer) handleHostsUpdates() {
@@ -168,7 +174,10 @@ type clientObject struct {
 
 // addFromConfig initializes the clients container with objects from the
 // configuration file.
-func (clients *clientsContainer) addFromConfig(objects []*clientObject, filteringConf *filtering.Config) {
+func (clients *clientsContainer) addFromConfig(
+	objects []*clientObject,
+	filteringConf *filtering.Config,
+) (err error) {
 	for _, o := range objects {
 		cli := &Client{
 			Name: o.Name,
@@ -189,7 +198,7 @@ func (clients *clientsContainer) addFromConfig(objects []*clientObject, filterin
 		if o.SafeSearchConf.Enabled {
 			o.SafeSearchConf.CustomResolver = safeSearchResolver{}
 
-			err := cli.setSafeSearch(
+			err = cli.setSafeSearch(
 				o.SafeSearchConf,
 				filteringConf.SafeSearchCacheSize,
 				time.Minute*time.Duration(filteringConf.CacheTime),
@@ -199,6 +208,11 @@ func (clients *clientsContainer) addFromConfig(objects []*clientObject, filterin
 
 				continue
 			}
+		}
+
+		err = o.BlockedServices.Validate()
+		if err != nil {
+			return fmt.Errorf("clients: %w", err)
 		}
 
 		cli.BlockedServices = o.BlockedServices.Clone()
@@ -213,11 +227,13 @@ func (clients *clientsContainer) addFromConfig(objects []*clientObject, filterin
 
 		slices.Sort(cli.Tags)
 
-		_, err := clients.Add(cli)
+		_, err = clients.Add(cli)
 		if err != nil {
 			log.Error("clients: adding clients %s: %s", cli.Name, err)
 		}
 	}
+
+	return nil
 }
 
 // forConfig returns all currently known persistent clients as objects for the

@@ -2,6 +2,7 @@ package filtering
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -63,11 +64,17 @@ func (s *BlockedServices) Clone() (c *BlockedServices) {
 	}
 }
 
-// BlockedSvcKnown returns true if a blocked service ID is known.
-func BlockedSvcKnown(s string) (ok bool) {
-	_, ok = serviceRules[s]
+// Validate returns an error if blocked services contain unknown service ID.  s
+// must not be nil.
+func (s *BlockedServices) Validate() (err error) {
+	for _, id := range s.IDs {
+		_, ok := serviceRules[id]
+		if !ok {
+			return fmt.Errorf("unknown blocked-service %q", id)
+		}
+	}
 
-	return ok
+	return nil
 }
 
 // ApplyBlockedServices - set blocked services settings for this DNS request
