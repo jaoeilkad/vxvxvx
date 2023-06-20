@@ -25,6 +25,9 @@ NOTE: Add new changes BELOW THIS COMMENT.
 
 ### Added
 
+- The ability to set inactivity periods for filtering blocked services per
+  client in the configuration file ([#951]).  The UI changes are coming in the
+  upcoming releases.
 - The ability to set inactivity periods for filtering blocked services in the
   configuration file ([#951]).  The UI changes are coming in the upcoming
   releases.

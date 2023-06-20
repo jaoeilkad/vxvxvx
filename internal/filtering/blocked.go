@@ -59,7 +59,7 @@ type BlockedServices struct {
 func (s *BlockedServices) Clone() (c *BlockedServices) {
 	return &BlockedServices{
 		Schedule: s.Schedule.Clone(),
-		IDs:      append([]string{}, s.IDs...),
+		IDs:      slices.Clone(s.IDs),
 	}
 }
 

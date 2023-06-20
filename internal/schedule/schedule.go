@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
-	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"gopkg.in/yaml.v3"
 )
@@ -31,14 +30,10 @@ func EmptyWeekly() (w *Weekly) {
 
 // Clone returns a deep copy of a weekly.
 func (w *Weekly) Clone() (c *Weekly) {
-	tz := w.location.String()
-	loc, err := time.LoadLocation(tz)
-	if err != nil {
-		log.Debug("schedule: cloning location: %s", err)
-	}
-
+	// NOTE:  Do not use time.LoadLocation, because the results will be
+	// different on time zone database update.
 	return &Weekly{
-		location: loc,
+		location: w.location,
 		days:     w.days,
 	}
 }
