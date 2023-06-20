@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/log"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"gopkg.in/yaml.v3"
 )
@@ -25,6 +26,20 @@ type Weekly struct {
 func EmptyWeekly() (w *Weekly) {
 	return &Weekly{
 		location: time.Local,
+	}
+}
+
+// Clone returns a deep copy of a weekly.
+func (w *Weekly) Clone() (c *Weekly) {
+	tz := w.location.String()
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		log.Debug("schedule: cloning location: %s", err)
+	}
+
+	return &Weekly{
+		location: loc,
+		days:     w.days,
 	}
 }
 

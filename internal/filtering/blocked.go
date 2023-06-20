@@ -55,6 +55,14 @@ type BlockedServices struct {
 	IDs []string `yaml:"ids"`
 }
 
+// Clone returns a deep copy of blocked services.
+func (s *BlockedServices) Clone() (c *BlockedServices) {
+	return &BlockedServices{
+		Schedule: s.Schedule.Clone(),
+		IDs:      append([]string{}, s.IDs...),
+	}
+}
+
 // BlockedSvcKnown returns true if a blocked service ID is known.
 func BlockedSvcKnown(s string) (ok bool) {
 	_, ok = serviceRules[s]

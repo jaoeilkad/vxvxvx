@@ -22,7 +22,7 @@ import (
 )
 
 // currentSchemaVersion is the current schema version.
-const currentSchemaVersion = 21
+const currentSchemaVersion = 22
 
 // These aliases are provided for convenience.
 type (
@@ -95,6 +95,7 @@ func upgradeConfigSchema(oldVersion int, diskConf yobj) (err error) {
 		upgradeSchema18to19,
 		upgradeSchema19to20,
 		upgradeSchema20to21,
+		upgradeSchema21to22,
 	}
 
 	n := 0
@@ -1174,6 +1175,75 @@ func upgradeSchema20to21(diskConf yobj) (err error) {
 		"schedule": yobj{
 			"time_zone": "Local",
 		},
+	}
+
+	return nil
+}
+
+// upgradeSchema21to22 performs the following changes:
+//
+//	# BEFORE:
+//	'persistent':
+//	  - 'name': 'client_name'
+//	    'blocked_services':
+//	    - 'svc_name'
+//
+//	# AFTER:
+//	'persistent':
+//	  - 'name': 'client_name'
+//	    'blocked_services':
+//	      'ids':
+//	      - 'svc_name'
+//	      'schedule':
+//	        'time_zone': 'Local'
+func upgradeSchema21to22(diskConf yobj) (err error) {
+	log.Printf("Upgrade yaml: 21 to 22")
+	diskConf["schema_version"] = 22
+
+	const field = "blocked_services"
+
+	clientsVal, ok := diskConf["clients"]
+	if !ok {
+		return nil
+	}
+
+	clients, ok := clientsVal.(yobj)
+	if !ok {
+		return fmt.Errorf("unexpected type of clients: %T", clientsVal)
+	}
+
+	persistentVal, ok := clients["persistent"]
+	if !ok {
+		return nil
+	}
+
+	persistent, ok := persistentVal.([]any)
+	if !ok {
+		return fmt.Errorf("unexpected type of persistent clients: %T", persistentVal)
+	}
+
+	for _, val := range persistent {
+		c, k := val.(yobj)
+		if !k {
+			return fmt.Errorf("unexpected type of client: %T", val)
+		}
+
+		blockedVal, k := c[field]
+		if !k {
+			continue
+		}
+
+		services, k := blockedVal.(yarr)
+		if !k {
+			return fmt.Errorf("unexpected type of blocked: %T", blockedVal)
+		}
+
+		c[field] = yobj{
+			"ids": services,
+			"schedule": yobj{
+				"time_zone": "Local",
+			},
+		}
 	}
 
 	return nil

@@ -147,12 +147,14 @@ func (clients *clientsContainer) reloadARP() {
 type clientObject struct {
 	SafeSearchConf filtering.SafeSearchConfig `yaml:"safe_search"`
 
+	// BlockedServices is the configuration of blocked services of a client.
+	BlockedServices *filtering.BlockedServices `yaml:"blocked_services"`
+
 	Name string `yaml:"name"`
 
-	Tags            []string `yaml:"tags"`
-	IDs             []string `yaml:"ids"`
-	BlockedServices []string `yaml:"blocked_services"`
-	Upstreams       []string `yaml:"upstreams"`
+	IDs       []string `yaml:"ids"`
+	Tags      []string `yaml:"tags"`
+	Upstreams []string `yaml:"upstreams"`
 
 	UseGlobalSettings        bool `yaml:"use_global_settings"`
 	FilteringEnabled         bool `yaml:"filtering_enabled"`
@@ -199,13 +201,7 @@ func (clients *clientsContainer) addFromConfig(objects []*clientObject, filterin
 			}
 		}
 
-		for _, s := range o.BlockedServices {
-			if filtering.BlockedSvcKnown(s) {
-				cli.BlockedServices = append(cli.BlockedServices, s)
-			} else {
-				log.Info("clients: skipping unknown blocked service %q", s)
-			}
-		}
+		cli.BlockedServices = o.BlockedServices.Clone()
 
 		for _, t := range o.Tags {
 			if clients.allTags.Has(t) {
@@ -235,10 +231,11 @@ func (clients *clientsContainer) forConfig() (objs []*clientObject) {
 		o := &clientObject{
 			Name: cli.Name,
 
-			Tags:            stringutil.CloneSlice(cli.Tags),
-			IDs:             stringutil.CloneSlice(cli.IDs),
-			BlockedServices: stringutil.CloneSlice(cli.BlockedServices),
-			Upstreams:       stringutil.CloneSlice(cli.Upstreams),
+			BlockedServices: cli.BlockedServices.Clone(),
+
+			IDs:       stringutil.CloneSlice(cli.IDs),
+			Tags:      stringutil.CloneSlice(cli.Tags),
+			Upstreams: stringutil.CloneSlice(cli.Upstreams),
 
 			UseGlobalSettings:        !cli.UseOwnSettings,
 			FilteringEnabled:         cli.FilteringEnabled,

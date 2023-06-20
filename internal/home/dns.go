@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/AdguardTeam/AdGuardHome/internal/aghalg"
 	"github.com/AdguardTeam/AdGuardHome/internal/aghhttp"
@@ -414,12 +415,15 @@ func applyAdditionalFiltering(clientIP net.IP, clientID string, setts *filtering
 
 	if c.UseOwnBlockedServices {
 		// TODO(e.burkov):  Get rid of this crutch.
-		svcs := c.BlockedServices
+		svcs := c.BlockedServices.IDs
 		if svcs == nil {
 			svcs = []string{}
 		}
-		Context.filters.ApplyBlockedServicesList(setts, svcs)
-		log.Debug("%s: services for client %q set: %s", pref, c.Name, svcs)
+
+		if !c.BlockedServices.Schedule.Contains(time.Now()) {
+			Context.filters.ApplyBlockedServicesList(setts, svcs)
+			log.Debug("%s: services for client %q set: %s", pref, c.Name, svcs)
+		}
 	}
 
 	setts.ClientName = c.Name
