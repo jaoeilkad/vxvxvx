@@ -212,7 +212,7 @@ func (clients *clientsContainer) addFromConfig(
 
 		err = o.BlockedServices.Validate()
 		if err != nil {
-			return fmt.Errorf("clients: %w", err)
+			return fmt.Errorf("clients: init client blocked services %q: %w", cli.Name, err)
 		}
 
 		cli.BlockedServices = o.BlockedServices.Clone()

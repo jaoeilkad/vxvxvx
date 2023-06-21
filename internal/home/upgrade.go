@@ -1197,7 +1197,7 @@ func upgradeSchema20to21(diskConf yobj) (err error) {
 //	      'schedule':
 //	        'time_zone': 'Local'
 func upgradeSchema21to22(diskConf yobj) (err error) {
-	log.Printf("Upgrade yaml: 21 to 22")
+	log.Println("Upgrade yaml: 21 to 22")
 	diskConf["schema_version"] = 22
 
 	const field = "blocked_services"
@@ -1223,18 +1223,21 @@ func upgradeSchema21to22(diskConf yobj) (err error) {
 	}
 
 	for _, val := range persistent {
-		c, k := val.(yobj)
-		if !k {
+		var c yobj
+		c, ok = val.(yobj)
+		if !ok {
 			return fmt.Errorf("unexpected type of client: %T", val)
 		}
 
-		blockedVal, k := c[field]
-		if !k {
+		var blockedVal any
+		blockedVal, ok = c[field]
+		if !ok {
 			continue
 		}
 
-		services, k := blockedVal.(yarr)
-		if !k {
+		var services yarr
+		services, ok = blockedVal.(yarr)
+		if !ok {
 			return fmt.Errorf("unexpected type of blocked: %T", blockedVal)
 		}
 
