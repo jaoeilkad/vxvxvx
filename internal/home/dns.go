@@ -472,9 +472,12 @@ func applyAdditionalFiltering(clientIP net.IP, clientID string, setts *filtering
 	log.Debug("%s: using settings for client %q (%s; %q)", pref, c.Name, clientIP, clientID)
 
 	if c.UseOwnBlockedServices {
+		// TODO(e.burkov):  Get rid of this crutch.
+		setts.ServicesRules = nil
+		svcs := c.BlockedServices.IDs
 		if !c.BlockedServices.Schedule.Contains(time.Now()) {
-			Context.filters.ApplyBlockedServicesList(setts, c.BlockedServices.IDs)
-			log.Debug("%s: services for client %q set: %s", pref, c.Name, c.BlockedServices.IDs)
+			Context.filters.ApplyBlockedServicesList(setts, svcs)
+			log.Debug("%s: services for client %q set: %s", pref, c.Name, svcs)
 		}
 	}
 
