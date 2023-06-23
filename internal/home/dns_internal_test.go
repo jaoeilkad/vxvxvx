@@ -52,6 +52,13 @@ func TestApplyAdditionalFiltering_blockedServices(t *testing.T) {
 			},
 			UseOwnBlockedServices: true,
 		},
+		"client_5": {
+			BlockedServices: &filtering.BlockedServices{
+				Schedule: schedule.FullWeekly(),
+				IDs:      clientBlockedServices,
+			},
+			UseOwnBlockedServices: true,
+		},
 	}
 
 	testCases := []struct {
@@ -75,6 +82,10 @@ func TestApplyAdditionalFiltering_blockedServices(t *testing.T) {
 	}, {
 		name:    "custom_settings_invalid",
 		id:      "client_4",
+		wantLen: 0,
+	}, {
+		name:    "custom_settings_inactive_schedule",
+		id:      "client_5",
 		wantLen: 0,
 	}}
 
