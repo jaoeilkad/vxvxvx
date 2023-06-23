@@ -162,7 +162,7 @@ type httpConfig struct {
 
 	// SessionTTL for a web session.
 	// An active session is automatically refreshed once a day.
-	SessionTTL time.Duration `yaml:"session_ttl"`
+	SessionTTL timeutil.Duration `yaml:"session_ttl"`
 }
 
 // dnsConfig is a block with DNS configuration params.
@@ -277,7 +277,7 @@ var config = &configuration{
 	AuthBlockMin: 15,
 	HTTPConfig: httpConfig{
 		Address:    netip.AddrPortFrom(netip.IPv4Unspecified(), 3000),
-		SessionTTL: 720 * time.Hour,
+		SessionTTL: timeutil.Duration{Duration: 720 * time.Hour},
 	},
 	DNS: dnsConfig{
 		BindHosts: []netip.Addr{netip.IPv4Unspecified()},
@@ -441,7 +441,7 @@ func readLogSettings() (ls *logSettings) {
 // not a valid IP address.
 func validateBindHosts(conf *configuration) (err error) {
 	if !conf.HTTPConfig.Address.IsValid() {
-		return errors.Error("bind_host is not a valid ip address")
+		return errors.Error("http.address is not a valid ip address")
 	}
 
 	for i, addr := range conf.DNS.BindHosts {
