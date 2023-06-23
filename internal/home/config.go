@@ -92,8 +92,10 @@ type clientSourcesConfig struct {
 	HostsFile bool `yaml:"hosts"`
 }
 
-// configuration is loaded from YAML
-// field ordering is important -- yaml fields will mirror ordering from here
+// configuration is loaded from YAML.
+//
+// Field ordering is important, YAML fields better not to be reordered, if it's
+// not absolutely necessary.
 type configuration struct {
 	// Raw file data to avoid re-reading of configuration file
 	// It's reset after config is parsed
@@ -150,8 +152,10 @@ type configuration struct {
 	SchemaVersion int `yaml:"schema_version"` // keeping last so that users will be less tempted to change it -- used when upgrading between versions
 }
 
-// httpConfig is a block with http configuration params.
-// field ordering is important -- yaml fields will mirror ordering from here
+// httpConfig is a block with HTTP configuration params.
+//
+// Field ordering is important, YAML fields better not to be reordered, if it's
+// not absolutely necessary.
 type httpConfig struct {
 	// Address is the address to serve the web UI on.
 	Address netip.AddrPort
@@ -161,7 +165,10 @@ type httpConfig struct {
 	SessionTTL time.Duration `yaml:"session_ttl"`
 }
 
-// field ordering is important -- yaml fields will mirror ordering from here
+// dnsConfig is a block with DNS configuration params.
+//
+// Field ordering is important, YAML fields better not to be reordered, if it's
+// not absolutely necessary.
 type dnsConfig struct {
 	BindHosts []netip.Addr `yaml:"bind_hosts"`
 	Port      int          `yaml:"port"`
