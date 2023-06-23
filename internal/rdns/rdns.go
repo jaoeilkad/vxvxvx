@@ -5,7 +5,6 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/AdguardTeam/AdGuardHome/internal/dnsforward"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/log"
 	"github.com/bluele/gcache"
@@ -13,7 +12,8 @@ import (
 
 // Interface processes rDNS queries.
 type Interface interface {
-	// Process makes rDNS request and returns domain name or error.
+	// Process makes rDNS request and returns domain name.  changed indicates
+	// that domain name was updated since last request.
 	Process(ip netip.Addr) (host string, changed bool)
 }
 
@@ -24,14 +24,24 @@ type Empty struct{}
 var _ Interface = (*Empty)(nil)
 
 // Process implements the [Interface] interface for Empty.
-func (Empty) Process(_ netip.Addr) (_ string, _ bool) {
+func (Empty) Process(_ netip.Addr) (host string, changed bool) {
 	return "", false
+}
+
+// Exchanger is a resolver for clients' addresses.
+type Exchanger interface {
+	// Exchange tries to resolve the ip in a suitable way, i.e. either as local
+	// or as external.
+	Exchange(ip netip.Addr) (host string, err error)
+
+	// IsPrivateIP returns true if the ip is private.
+	IsPrivateIP(ip netip.Addr) (ok bool)
 }
 
 // Config is the configuration structure for Default.
 type Config struct {
 	// Exchanger resolves IP addresses to domain names.
-	Exchanger dnsforward.RDNSExchanger
+	Exchanger Exchanger
 
 	// CacheSize is the maximum size of the cache.  It must be greater than
 	// zero.
@@ -43,14 +53,17 @@ type Config struct {
 
 // Default is the default rDNS query processor.
 type Default struct {
-	// cache is the cache ontaining IP addresses of clients.  An active IP
+	// cache is the cache containing IP addresses of clients.  An active IP
 	// address is resolved once again after it expires.  If IP address couldn't
 	// be resolved, it stays here for some time to prevent further attempts to
 	// resolve the same IP.
 	cache gcache.Cache
 
+	// privateCache is like the cache but for private IP addresses.
+	privateCache gcache.Cache
+
 	// exchanger resolves IP addresses to domain names.
-	exchanger dnsforward.RDNSExchanger
+	exchanger Exchanger
 
 	// cacheTTL is the Time to Live duration for cached IP addresses.
 	cacheTTL time.Duration
@@ -59,9 +72,10 @@ type Default struct {
 // New returns a new default rDNS query processor.  conf must not be nil.
 func New(conf *Config) (r *Default) {
 	return &Default{
-		cache:     gcache.New(conf.CacheSize).LRU().Build(),
-		exchanger: conf.Exchanger,
-		cacheTTL:  conf.CacheTTL,
+		cache:        gcache.New(conf.CacheSize).LRU().Build(),
+		privateCache: gcache.New(conf.CacheSize).LRU().Build(),
+		exchanger:    conf.Exchanger,
+		cacheTTL:     conf.CacheTTL,
 	}
 }
 
@@ -70,18 +84,27 @@ var _ Interface = (*Default)(nil)
 
 // Process implements the [Interface] interface for Default.
 func (r *Default) Process(ip netip.Addr) (host string, changed bool) {
-	fromCache, expired := r.findInCache(ip)
+	cache := r.cache
+	if r.exchanger.IsPrivateIP(ip) {
+		cache = r.privateCache
+	}
+
+	fromCache, expired := findInCache(cache, ip)
 	if !expired {
 		return fromCache, false
 	}
 
-	host, err := r.exchanger.Exchange(ip.AsSlice())
+	host, err := r.exchanger.Exchange(ip)
 	if err != nil {
 		log.Debug("rdns: resolving %q: %s", ip, err)
 	}
 
-	item := toCacheItem(host, r.cacheTTL)
-	err = r.cache.Set(ip, item)
+	item := &cacheItem{
+		expiry: time.Now().Add(r.cacheTTL),
+		host:   host,
+	}
+
+	err = cache.Set(ip, item)
 	if err != nil {
 		log.Debug("rdns: cache: adding item %q: %s", ip, err)
 	}
@@ -93,10 +116,10 @@ func (r *Default) Process(ip netip.Addr) (host string, changed bool) {
 	return host, true
 }
 
-// findInCache finds domain name in the cache.  expired indicates that host is
-// valid.
-func (r *Default) findInCache(ip netip.Addr) (host string, expired bool) {
-	val, err := r.cache.Get(ip)
+// findInCache finds domain name in the cache.  expired is true if host is not
+// valid anymore.
+func findInCache(cache gcache.Cache, ip netip.Addr) (host string, expired bool) {
+	val, err := cache.Get(ip)
 	if err != nil {
 		if !errors.Is(err, gcache.KeyNotFoundError) {
 			log.Debug("rdns: cache: retrieving %q: %s", ip, err)
@@ -112,7 +135,7 @@ func (r *Default) findInCache(ip netip.Addr) (host string, expired bool) {
 		return "", true
 	}
 
-	return fromCacheItem(item)
+	return item.host, time.Now().After(item.expiry)
 }
 
 // cacheItem represents an item that we will store in the cache.
@@ -122,23 +145,4 @@ type cacheItem struct {
 
 	// host is the domain name of a runtime client.
 	host string
-}
-
-// toCacheItem creates a cached item from a domain name and Time to Live
-// duration.
-func toCacheItem(host string, ttl time.Duration) (item *cacheItem) {
-	return &cacheItem{
-		expiry: time.Now().Add(ttl),
-		host:   host,
-	}
-}
-
-// fromCacheItem creates a domain name from the cached item.  expired indicates
-// that domain name is valid.  item must not be nil.
-func fromCacheItem(item *cacheItem) (host string, expired bool) {
-	if time.Now().After(item.expiry) {
-		return item.host, true
-	}
-
-	return item.host, false
 }
