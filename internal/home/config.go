@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/AdguardTeam/AdGuardHome/internal/aghalg"
 	"github.com/AdguardTeam/AdGuardHome/internal/aghtls"
@@ -98,11 +99,8 @@ type configuration struct {
 	// It's reset after config is parsed
 	fileData []byte
 
-	// BindHost is the address for the web interface server to listen on.
-	BindHost netip.Addr `yaml:"bind_host"`
-	// BindPort is the port for the web interface server to listen on.
-	BindPort int `yaml:"bind_port"`
-
+	// HTTPConfig is the block with http conf.
+	HTTPConfig httpConfig `yaml:"http"`
 	// Users are the clients capable for accessing the web interface.
 	Users []webUser `yaml:"users"`
 	// AuthAttempts is the maximum number of failed login attempts a user
@@ -119,10 +117,6 @@ type configuration struct {
 	Theme Theme `yaml:"theme"`
 	// DebugPProf defines if the profiling HTTP handler will listen on :6060.
 	DebugPProf bool `yaml:"debug_pprof"`
-
-	// TTL for a web session (in hours)
-	// An active session is automatically refreshed once a day.
-	WebSessionTTLHours uint32 `yaml:"web_session_ttl"`
 
 	DNS      dnsConfig         `yaml:"dns"`
 	TLS      tlsConfigSettings `yaml:"tls"`
@@ -154,6 +148,17 @@ type configuration struct {
 	sync.RWMutex `yaml:"-"`
 
 	SchemaVersion int `yaml:"schema_version"` // keeping last so that users will be less tempted to change it -- used when upgrading between versions
+}
+
+// httpConfig is a block with http configuration params.
+// field ordering is important -- yaml fields will mirror ordering from here
+type httpConfig struct {
+	// Address is the address to serve the web UI on.
+	Address netip.AddrPort
+
+	// SessionTTL for a web session.
+	// An active session is automatically refreshed once a day.
+	SessionTTL time.Duration `yaml:"session_ttl"`
 }
 
 // field ordering is important -- yaml fields will mirror ordering from here
@@ -261,11 +266,12 @@ type statsConfig struct {
 //
 // TODO(a.garipov, e.burkov): This global is awful and must be removed.
 var config = &configuration{
-	BindPort:           3000,
-	BindHost:           netip.IPv4Unspecified(),
-	AuthAttempts:       5,
-	AuthBlockMin:       15,
-	WebSessionTTLHours: 30 * 24,
+	AuthAttempts: 5,
+	AuthBlockMin: 15,
+	HTTPConfig: httpConfig{
+		Address:    netip.AddrPortFrom(netip.IPv4Unspecified(), 3000),
+		SessionTTL: 720 * time.Hour,
+	},
 	DNS: dnsConfig{
 		BindHosts: []netip.Addr{netip.IPv4Unspecified()},
 		Port:      defaultPortDNS,
@@ -427,7 +433,7 @@ func readLogSettings() (ls *logSettings) {
 // validateBindHosts returns error if any of binding hosts from configuration is
 // not a valid IP address.
 func validateBindHosts(conf *configuration) (err error) {
-	if !conf.BindHost.IsValid() {
+	if !conf.HTTPConfig.Address.IsValid() {
 		return errors.Error("bind_host is not a valid ip address")
 	}
 
@@ -462,7 +468,7 @@ func parseConfig() (err error) {
 	}
 
 	tcpPorts := aghalg.UniqChecker[tcpPort]{}
-	addPorts(tcpPorts, tcpPort(config.BindPort))
+	addPorts(tcpPorts, tcpPort(config.HTTPConfig.Address.Port()))
 
 	udpPorts := aghalg.UniqChecker[udpPort]{}
 	addPorts(udpPorts, udpPort(config.DNS.Port))

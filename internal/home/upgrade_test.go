@@ -1183,3 +1183,42 @@ func TestUpgradeSchema20to21(t *testing.T) {
 		})
 	}
 }
+
+func TestUpgradeSchema21to22(t *testing.T) {
+	const newSchemaVer = 22
+
+	testCases := []struct {
+		in   yobj
+		want yobj
+		name string
+	}{{
+		name: "empty",
+		in:   yobj{},
+		want: yobj{
+			"schema_version": newSchemaVer,
+		},
+	}, {
+		name: "ok",
+		in: yobj{
+			"bind_host":       "1.2.3.4",
+			"bind_port":       8081,
+			"web_session_ttl": 720,
+		},
+		want: yobj{
+			"http": yobj{
+				"address":     "1.2.3.4:8081",
+				"session_ttl": "720h0m0s",
+			},
+			"schema_version": newSchemaVer,
+		},
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := upgradeSchema21to22(tc.in)
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.want, tc.in)
+		})
+	}
+}
