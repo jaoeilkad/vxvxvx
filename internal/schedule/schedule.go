@@ -29,6 +29,8 @@ func EmptyWeekly() (w *Weekly) {
 }
 
 // FullWeekly creates full weekly schedule with local time zone.
+//
+// TODO(s.chzhen):  Consider moving into tests.
 func FullWeekly() (w *Weekly) {
 	fullDay := dayRange{start: 0, end: maxDayRange}
 
