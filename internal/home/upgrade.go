@@ -1226,7 +1226,7 @@ func upgradeSchema21to22(diskConf yobj) (err error) {
 		var c yobj
 		c, ok = val.(yobj)
 		if !ok {
-			return fmt.Errorf("persistent %d: unexpected type of client: %T", i, val)
+			return fmt.Errorf("persistent client at index %d: unexpected type %T", i, val)
 		}
 
 		var blockedVal any
@@ -1238,7 +1238,11 @@ func upgradeSchema21to22(diskConf yobj) (err error) {
 		var services yarr
 		services, ok = blockedVal.(yarr)
 		if !ok {
-			return fmt.Errorf("persistent: %d: unexpected type of blocked: %T", i, blockedVal)
+			return fmt.Errorf(
+				"persistent client at index %d: unexpected type of blocked services: %T",
+				i,
+				blockedVal,
+			)
 		}
 
 		c[field] = yobj{
