@@ -1238,7 +1238,7 @@ func upgradeSchema21to22(diskConf yobj) (err error) {
 
 	diskConf["http"] = yobj{
 		"address":     addr.String(),
-		"session_ttl": (time.Duration(sessionTTL) * time.Hour).String(),
+		"session_ttl": timeutil.Duration{Duration: time.Duration(sessionTTL) * time.Hour}.String(),
 	}
 
 	delete(diskConf, "bind_host")

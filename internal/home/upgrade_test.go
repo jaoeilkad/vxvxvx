@@ -1207,7 +1207,7 @@ func TestUpgradeSchema21to22(t *testing.T) {
 		want: yobj{
 			"http": yobj{
 				"address":     "1.2.3.4:8081",
-				"session_ttl": "720h0m0s",
+				"session_ttl": "720h",
 			},
 			"schema_version": newSchemaVer,
 		},
