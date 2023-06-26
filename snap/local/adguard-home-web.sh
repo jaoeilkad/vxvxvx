@@ -3,7 +3,7 @@
 yaml_file="${SNAP_DATA}/AdGuardHome.yaml"
 
 # Get the admin interface port from the configuration.
-bind_port=$(grep -A 1 "http:" "$yaml_file" | grep "address:" | awk '{print $2}' | cut -d ':' -f 2)
+bind_port=$(grep -A 1 "http:" "$yaml_file" | grep "address:" | awk '{print $2}' | awk -F":" '{print $NF}')
 readonly bind_port
 
 if [ "$bind_port" = '' ]
