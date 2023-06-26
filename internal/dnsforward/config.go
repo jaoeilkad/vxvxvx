@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -21,7 +22,9 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/stringutil"
 	"github.com/AdguardTeam/golibs/timeutil"
+	"github.com/AdguardTeam/urlfilter"
 	"github.com/ameshkov/dnscrypt/v2"
+	"github.com/miekg/dns"
 	"golang.org/x/exp/slices"
 )
 
@@ -476,16 +479,14 @@ func (s *Server) prepareUpstreamSettings() error {
 	}
 
 	httpVersions := UpstreamHTTPVersions(s.conf.UseHTTP3Upstreams)
+	opts := &upstream.Options{
+		Bootstrap:    s.conf.BootstrapDNS,
+		Timeout:      s.conf.UpstreamTimeout,
+		HTTPVersions: httpVersions,
+		PreferIPv6:   s.conf.BootstrapPreferIPv6,
+	}
 	upstreams = stringutil.FilterOut(upstreams, IsCommentOrEmpty)
-	upstreamConfig, err := proxy.ParseUpstreamsConfig(
-		upstreams,
-		&upstream.Options{
-			Bootstrap:    s.conf.BootstrapDNS,
-			Timeout:      s.conf.UpstreamTimeout,
-			HTTPVersions: httpVersions,
-			PreferIPv6:   s.conf.BootstrapPreferIPv6,
-		},
-	)
+	upstreamConfig, err := proxy.ParseUpstreamsConfig(upstreams, opts)
 	if err != nil {
 		return fmt.Errorf("parsing upstream config: %w", err)
 	}
@@ -493,15 +494,7 @@ func (s *Server) prepareUpstreamSettings() error {
 	if len(upstreamConfig.Upstreams) == 0 {
 		log.Info("warning: no default upstream servers specified, using %v", defaultDNS)
 		var uc *proxy.UpstreamConfig
-		uc, err = proxy.ParseUpstreamsConfig(
-			defaultDNS,
-			&upstream.Options{
-				Bootstrap:    s.conf.BootstrapDNS,
-				Timeout:      s.conf.UpstreamTimeout,
-				HTTPVersions: httpVersions,
-				PreferIPv6:   s.conf.BootstrapPreferIPv6,
-			},
-		)
+		uc, err = proxy.ParseUpstreamsConfig(defaultDNS, opts)
 		if err != nil {
 			return fmt.Errorf("parsing default upstreams: %w", err)
 		}
@@ -509,9 +502,146 @@ func (s *Server) prepareUpstreamSettings() error {
 		upstreamConfig.Upstreams = uc.Upstreams
 	}
 
+	if s.dnsFilter != nil && s.dnsFilter.EtcHosts != nil {
+		err = s.replaceUpstreamsWithHosts(upstreamConfig, opts)
+		if err != nil {
+			return fmt.Errorf("resolving upstreams with hosts: %w", err)
+		}
+	}
+
 	s.conf.UpstreamConfig = upstreamConfig
 
 	return nil
+}
+
+// replaceUpstreamsWithHosts replaces unique upstreams with their resolved
+// versions based on the system hosts file.
+//
+// TODO(e.burkov):  This should be performed inside dnsproxy, which should
+// actually consider /etc/hosts.  See TODO on [aghnet.HostsContainer].
+func (s *Server) replaceUpstreamsWithHosts(
+	upsConf *proxy.UpstreamConfig,
+	opts *upstream.Options,
+) (err error) {
+	resolved := map[upstream.Upstream]upstream.Upstream{}
+
+	err = s.resolveUpstreamsWithHosts(resolved, upsConf.Upstreams, opts)
+	if err != nil {
+		return fmt.Errorf("resolving default upstreams: %w", err)
+	}
+
+	for host, reserved := range upsConf.DomainReservedUpstreams {
+		err = s.resolveUpstreamsWithHosts(resolved, reserved, opts)
+		if err != nil {
+			return fmt.Errorf("resolving upstreams reserved for %s: %w", host, err)
+		}
+	}
+
+	for host, specific := range upsConf.SpecifiedDomainUpstreams {
+		err = s.resolveUpstreamsWithHosts(resolved, specific, opts)
+		if err != nil {
+			return fmt.Errorf("resolving upstreams specific for %s: %w", host, err)
+		}
+	}
+
+	return nil
+}
+
+// resolveUpstreamsWithHosts resolves the IP addresses of each of the ups and
+// replaces those both in ups and resolved.  If the host failed to resolve, the
+// original upstream is placed to resolved.  It only returns an error if the
+// original upstream failed to be closed.
+func (s *Server) resolveUpstreamsWithHosts(
+	resolved map[upstream.Upstream]upstream.Upstream,
+	ups []upstream.Upstream,
+	opts *upstream.Options,
+) (err error) {
+	for i, u := range ups {
+		resolvedUps, ok := resolved[u]
+		if ok {
+			ups[i] = resolvedUps
+		} else if resolvedUps = s.resolveUpstreamHost(u, opts); resolvedUps == nil {
+			resolved[u] = u
+		} else {
+			err = u.Close()
+			if err != nil {
+				return fmt.Errorf("closing upstream %s: %w", u.Address(), err)
+			}
+
+			resolved[u] = resolvedUps
+			ups[i] = resolvedUps
+		}
+	}
+
+	return nil
+}
+
+// resolveUpstreamHost returns the version of ups with IP addresses from the
+// system hosts file placed into its options.
+func (s *Server) resolveUpstreamHost(
+	ups upstream.Upstream,
+	opts *upstream.Options,
+) (resolved upstream.Upstream) {
+	addr := ups.Address()
+
+	// Extract host with an assumption that any upstream passed here has already
+	// been successfully parsed.  This part mirrors the logic from the upstream
+	// package, se TODO on [replaceUpstreamsWithHosts].
+	var host string
+	if strings.Contains(addr, "://") {
+		// Parse as URL.
+		uu, err := url.Parse(addr)
+		if err != nil {
+			log.Debug("dns: parsing upstream %s: %s", addr, err)
+
+			return nil
+		}
+
+		host = uu.Hostname()
+	} else {
+		// Probably, plain UDP upstream defined by address or address:port.
+		var err error
+		host, _, err = net.SplitHostPort(addr)
+		if err != nil {
+			host = addr
+		}
+	}
+
+	req := &urlfilter.DNSRequest{
+		Hostname: host,
+		DNSType:  dns.TypeA,
+	}
+	aRes, _ := s.dnsFilter.EtcHosts.MatchRequest(req)
+
+	req.DNSType = dns.TypeAAAA
+	aaaaRes, _ := s.dnsFilter.EtcHosts.MatchRequest(req)
+
+	rws := append(aRes.DNSRewrites(), aaaaRes.DNSRewrites()...)
+
+	var ips []net.IP
+	for _, rw := range rws {
+		dr := rw.DNSRewrite
+		if dr.NewCNAME != "" || dr.RCode != dns.RcodeSuccess {
+			continue
+		}
+
+		if ip, ok := dr.Value.(net.IP); ok {
+			ips = append(ips, ip)
+		}
+	}
+
+	if len(ips) > 0 {
+		opts = opts.Clone()
+		opts.ServerIPAddrs = ips
+
+		var err error
+		resolved, err = upstream.AddressToUpstream(addr, opts)
+		if err == nil {
+			log.Debug("using addresses from hosts %s for upstream %s", ips, addr)
+		}
+	}
+
+	return resolved
 }
 
 // setProxyUpstreamMode sets the upstream mode and related settings in conf
