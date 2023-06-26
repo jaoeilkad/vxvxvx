@@ -58,6 +58,10 @@ type BlockedServices struct {
 
 // Clone returns a deep copy of blocked services.
 func (s *BlockedServices) Clone() (c *BlockedServices) {
+	if s == nil {
+		return nil
+	}
+
 	return &BlockedServices{
 		Schedule: s.Schedule.Clone(),
 		IDs:      slices.Clone(s.IDs),

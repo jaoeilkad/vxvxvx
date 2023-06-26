@@ -46,10 +46,7 @@ type Client struct {
 func (c *Client) ShallowClone() (sh *Client) {
 	clone := *c
 
-	if c.BlockedServices != nil {
-		clone.BlockedServices = c.BlockedServices.Clone()
-	}
-
+	clone.BlockedServices = c.BlockedServices.Clone()
 	clone.IDs = stringutil.CloneSlice(c.IDs)
 	clone.Tags = stringutil.CloneSlice(c.Tags)
 	clone.Upstreams = stringutil.CloneSlice(c.Upstreams)
