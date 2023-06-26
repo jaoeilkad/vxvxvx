@@ -37,7 +37,7 @@ NOTE: Add new changes BELOW THIS COMMENT.
 
 #### Configuration Changes
 
-In this release, the schema version has changed from 20 to 21.
+In this release, the schema version has changed from 20 to 22.
 
 - Property `dns.blocked_services`, which in schema versions 20 and earlier used
   to be a list containing ids of blocked services, is now an object containing
@@ -81,6 +81,26 @@ In this release, the schema version has changed from 20 to 21.
 
   To rollback this change, replace `dns.blocked_services` object with the list
   of ids of blocked services and change the `schema_version` back to `20`.
+
+- Properties `bind_host`, `bind_port`, and `web_session_ttl` which used to setup
+  web UI binding configuration, are now moved to a new object `http` containing
+  new properties `address` and `session_ttl`:
+
+  ```yaml
+  # BEFORE:
+  'bind_host': '1.2.3.4'
+  'bind_port': 8080
+  'web_session_ttl': 720
+
+  # AFTER:
+  'http':
+    'address': '1.2.3.4:8080'
+    'session_ttl': '720h'
+  ```
+  
+  Note that the new `http.session_ttl` property is now a duration string.  To
+  rollback this change, remove the new object `http`, set back `bind_host`,
+  `bind_port`, `web_session_ttl`,  and change the `schema_version` back to `20`.
 
 ### Deprecated
 
